@@ -1,1 +1,6 @@
-/* You can add global styles to this file, and also import other style files */
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
+
+html { min-width: 320px; min-height: 100%; background: #f4f7f3; }
+body { min-width: 320px; min-height: 100vh; margin: 0; font-family: 'DM Sans', 'Segoe UI', sans-serif; }
+button, input, select { font: inherit; }
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid rgba(69, 139, 104, .48); outline-offset: 2px; }

@@ -57,6 +57,10 @@
               "baseHref": "/dayMark/",
               "outputMode": "static"
             },
+            "cloudflare-pages": {
+              "baseHref": "/",
+              "outputMode": "static"
+            },
             "development": {
               "optimization": false,
               "extractLicenses": false,

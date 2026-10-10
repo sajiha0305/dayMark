@@ -6,6 +6,7 @@
     "start": "ng serve",
     "build": "ng build",
     "build:pages": "ng build --configuration production,github-pages",
+    "build:cloudflare": "ng build --configuration production,cloudflare-pages",
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
     "serve:ssr:angular-course": "node dist/angular-course/server/server.mjs"

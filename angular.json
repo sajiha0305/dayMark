@@ -53,6 +53,10 @@
               ],
               "outputHashing": "all"
             },
+            "github-pages": {
+              "baseHref": "/dayMark/",
+              "outputMode": "static"
+            },
             "development": {
               "optimization": false,
               "extractLicenses": false,

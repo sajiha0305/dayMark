@@ -1,3 +1,43 @@
+@if (!initialized()) {
+  <main class="auth-screen"><section class="auth-card loading-card"><span class="brand-mark">d.</span><p class="eyebrow">DAYMARK · MONEY &amp; MOMENTS</p><h1>Loading your <em>space.</em></h1></section></main>
+} @else if (!api.account()) {
+  <main class="auth-screen">
+    <section class="auth-card">
+      <div class="auth-story">
+        <a class="brand auth-brand" href="#daymark"><span class="brand-mark">d.</span><span class="brand-name">daymark<span>money &amp; moments</span></span></a>
+        <div class="auth-story-copy"><p class="eyebrow">A LITTLE MORE BALANCE</p><h1>Your money.<br /><em>Your moments.</em></h1><p>Keep your budget clear and make time for the things you love. Your personal space travels with your account.</p><div class="auth-feature-list"><span><i>01</i> Plan spending with intention</span><span><i>02</i> Track the hobbies that make you, you</span></div></div>
+        <span class="auth-story-foot">Built for the life you’re building.</span>
+      </div>
+      <div class="auth-form-panel">
+        <p class="eyebrow">YOUR DAYMARK ACCOUNT</p>
+        @if (authNotice()) { <div class="auth-message" role="status">{{ authNotice() }}</div> }
+        @if (authError()) { <div class="auth-error" role="alert">{{ authError() }}</div> }
+        @if (authMode() === 'login') {
+          <h2>Welcome back.</h2><p class="auth-description">Sign in to pick up where you left off.</p>
+          <form class="auth-form" (submit)="login($event, loginUsername.value, loginPassword.value)">
+            <label for="login-username">Username</label><input #loginUsername id="login-username" type="text" autocomplete="username" placeholder="your_username" maxlength="254" required />
+            <label for="login-password">Password</label><input #loginPassword id="login-password" type="password" autocomplete="current-password" placeholder="Your password" required />
+            <button class="button button-primary auth-submit" type="submit">Sign in <span aria-hidden="true">→</span></button>
+          </form>
+          <p class="auth-switch">New to Daymark? <button type="button" (click)="authMode.set('register'); authError.set(''); authNotice.set('')">Create an account</button></p>
+        } @else {
+          <h2>Make it yours.</h2><p class="auth-description">Create a username and password to get started.</p>
+          <form #registerForm class="auth-form" (submit)="register($event, registerUsername.value, registerPassword.value, registerConfirmation.value, registerForm)">
+            <label for="register-username">Username <span class="field-hint">3–30 letters, numbers, . _ -</span></label><input #registerUsername id="register-username" type="text" autocomplete="username" placeholder="your_username" minlength="3" maxlength="30" pattern="[A-Za-z0-9._-]{3,30}" required />
+            <label for="register-password">Password <span class="field-hint">12 characters or more</span></label><input #registerPassword id="register-password" type="password" autocomplete="new-password" minlength="12" maxlength="72" placeholder="Create a strong password" required />
+            <label for="register-confirm">Confirm password</label><input #registerConfirmation id="register-confirm" type="password" autocomplete="new-password" minlength="12" maxlength="72" placeholder="Enter it again" required />
+            <button class="button button-primary auth-submit" type="submit">Create account <span aria-hidden="true">→</span></button>
+          </form>
+          <p class="auth-switch">Already have an account? <button type="button" (click)="authMode.set('login'); authError.set(''); authNotice.set('')">Sign in</button></p>
+        }
+        @if (legacyAvailable()) {
+          <div class="legacy-export"><span>Your old browser-saved tracker data is here.</span><button class="text-action" type="button" (click)="downloadLegacyData()">Download a backup</button></div>
+        }
+        <p class="auth-security">Passwords are one-way hashed. Sign-in sessions use secure, HTTP-only cookies.</p>
+      </div>
+    </section>
+  </main>
+} @else {
 <div class="app-shell">
   <aside class="sidebar" aria-label="Main navigation">
     <a class="brand" href="#overview" (click)="$event.preventDefault(); setPage('overview')">
@@ -22,16 +62,19 @@
       <span class="note-spark" aria-hidden="true">✳</span>
       <p>A little attention, every day, adds up.</p>
     </div>
-    <div class="sidebar-footer"><span class="status-dot"></span> Your data stays on this device</div>
+    <div class="sidebar-footer"><span class="status-dot"></span> Your data syncs to your account</div>
   </aside>
 
   <main class="main-content">
     <header class="topbar">
       <div class="breadcrumb"><span>PERSONAL DASHBOARD</span><span class="breadcrumb-dot">/</span><span>{{ monthLabel }}</span></div>
-      <button class="button button-primary top-action" type="button" (click)="toggleForm('expense')">
-        <span class="button-plus" aria-hidden="true">+</span> Add expense
-      </button>
+      <div class="top-actions"><span class="account-username">{{ api.account()?.username }}</span><button class="signout-button" type="button" (click)="logout()">Sign out</button><button class="button button-primary top-action" type="button" (click)="toggleForm('expense')"><span class="button-plus" aria-hidden="true">+</span> Add expense</button></div>
     </header>
+
+    @if (dataError()) { <div class="data-alert" role="alert">{{ dataError() }}</div> }
+    @if (migrationAvailable()) {
+      <section class="migration-banner"><div><p class="eyebrow">ONE-TIME DATA IMPORT</p><strong>Bring your old tracker data into this account?</strong><p>This replaces the starter budget, so import before adding new account data. Choose this browser’s saved data or a JSON backup from your previous site.</p></div><div class="migration-actions">@if (legacyAvailable()) { <button class="button button-primary" type="button" (click)="importBrowserData()">Import this browser</button> }<label class="button button-secondary file-import-button">Choose backup<input type="file" accept="application/json,.json" (change)="chooseImportFile($event)" /></label><button class="quiet-button" type="button" (click)="dismissMigration()">Not now</button></div></section>
+    }
 
     <div class="page-wrap">
       @if (activePage() === 'overview') {
@@ -246,3 +289,4 @@
     <button type="button" [class.active]="activePage() === 'hobbies'" (click)="setPage('hobbies')"><span aria-hidden="true">◷</span>Hobbies</button>
   </nav>
 </div>
+}

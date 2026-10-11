@@ -1,6 +1,9 @@
-import { afterNextRender, Component, signal } from '@angular/core';
+import { HttpErrorResponse } from '@angular/common/http';
+import { afterNextRender, Component, inject, signal } from '@angular/core';
+import { ApiMessage, AuthApiService } from './auth-api.service';
 
 type DashboardPage = 'overview' | 'budget' | 'hobbies';
+type AuthMode = 'login' | 'register';
 
 interface BudgetCategory {
   id: string;
@@ -53,7 +56,16 @@ const STARTER_CATEGORIES: BudgetCategory[] = [
   templateUrl: './app.html',
 })
 export class App {
+  protected readonly api = inject(AuthApiService);
   protected readonly Math = Math;
+  protected readonly initialized = signal(false);
+  protected readonly authMode = signal<AuthMode>('login');
+  protected readonly authError = signal('');
+  protected readonly authNotice = signal('');
+  protected readonly dataError = signal('');
+  protected readonly legacyAvailable = signal(false);
+  protected readonly migrationAvailable = signal(false);
+  protected readonly importFileSelected = signal(false);
   protected readonly activePage = signal<DashboardPage>('overview');
   protected readonly income = signal(0);
   protected readonly currency = signal('USD');
@@ -65,6 +77,7 @@ export class App {
   protected readonly categoryFormOpen = signal(false);
   protected readonly hobbyFormOpen = signal(false);
   protected readonly logFormOpen = signal(false);
+  private saveQueue: Promise<void> = Promise.resolve();
   protected readonly todayKey = this.toDateKey(new Date());
   protected readonly currentMonthKey = this.todayKey.slice(0, 7);
   protected readonly monthLabel = new Intl.DateTimeFormat('en', {
@@ -78,7 +91,107 @@ export class App {
   }).format(new Date());
 
   constructor() {
-    afterNextRender(() => this.restoreState());
+    afterNextRender(() => {
+      this.legacyAvailable.set(this.readLegacyState() !== null);
+      void this.initializeApp();
+    });
+  }
+
+  protected async login(event: Event, username: string, password: string): Promise<void> {
+    event.preventDefault();
+    this.authError.set('');
+    this.authNotice.set('');
+    try {
+      await this.api.login(username, password);
+      await this.loadTracker();
+      this.legacyAvailable.set(this.readLegacyState() !== null);
+    } catch (error) {
+      this.authError.set(this.errorMessage(error));
+    }
+  }
+
+  protected async register(
+    event: Event,
+    username: string,
+    password: string,
+    confirmation: string,
+    form: HTMLFormElement,
+  ): Promise<void> {
+    event.preventDefault();
+    this.authError.set('');
+    this.authNotice.set('');
+    if (password !== confirmation) {
+      this.authError.set('The passwords do not match.');
+      return;
+    }
+    try {
+      const result = await this.api.register(username, password);
+      form.reset();
+      this.authMode.set('login');
+      this.authNotice.set(result.message);
+    } catch (error) {
+      this.authError.set(this.errorMessage(error));
+    }
+  }
+
+  protected async logout(): Promise<void> {
+    this.dataError.set('');
+    try {
+      await this.api.logout();
+      this.income.set(0);
+      this.currency.set('USD');
+      this.categories.set([]);
+      this.expenses.set([]);
+      this.hobbies.set([]);
+      this.hobbyLogs.set([]);
+      this.closeForms();
+    } catch (error) {
+      this.dataError.set(this.errorMessage(error));
+    }
+  }
+
+  protected downloadLegacyData(): void {
+    const state = this.readLegacyState();
+    if (!state) return;
+    const data = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(data);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'daymark-browser-data.json';
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  protected async chooseImportFile(event: Event): Promise<void> {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    try {
+      const state = JSON.parse(await file.text()) as SavedState;
+      this.assertSavedState(state);
+      await this.importLegacyState(state, false);
+    } catch (error) {
+      this.dataError.set(this.errorMessage(error, 'That file is not a valid Daymark data export.'));
+    } finally {
+      input.value = '';
+    }
+  }
+
+  protected async importBrowserData(): Promise<void> {
+    const state = this.readLegacyState();
+    if (!state) {
+      this.dataError.set('No saved Daymark data was found in this browser.');
+      return;
+    }
+    await this.importLegacyState(state, true);
+  }
+
+  protected dismissMigration(): void {
+    const account = this.api.account();
+    if (account) {
+      window.localStorage.setItem(`daymark-migration-dismissed:${account.id}`, 'true');
+    }
+    this.migrationAvailable.set(false);
   }
 
   protected setPage(page: DashboardPage): void {
@@ -290,24 +403,39 @@ export class App {
     return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
   }
 
-  private restoreState(): void {
-    const saved = window.localStorage.getItem('daymark-tracker');
-    if (!saved) return;
+  private async initializeApp(): Promise<void> {
     try {
-      const state = JSON.parse(saved) as Partial<SavedState>;
-      if (typeof state.income === 'number') this.income.set(state.income);
-      if (typeof state.currency === 'string') this.currency.set(state.currency);
-      if (Array.isArray(state.categories)) this.categories.set(state.categories);
-      if (Array.isArray(state.expenses)) this.expenses.set(state.expenses);
-      if (Array.isArray(state.hobbies)) this.hobbies.set(state.hobbies);
-      if (Array.isArray(state.hobbyLogs)) this.hobbyLogs.set(state.hobbyLogs);
-    } catch {
-      window.localStorage.removeItem('daymark-tracker');
+      await this.api.initialize();
+      if (this.api.account()) {
+        await this.loadTracker();
+        this.legacyAvailable.set(this.readLegacyState() !== null);
+      }
+    } catch (error) {
+      this.authError.set(this.errorMessage(error));
+    } finally {
+      this.initialized.set(true);
     }
   }
 
-  private saveState(): void {
-    const state: SavedState = {
+  private async loadTracker(): Promise<void> {
+    this.applyState(await this.api.getTracker<SavedState>());
+    const account = this.api.account();
+    const available = await this.api.migrationAvailable();
+    const dismissed = account && window.localStorage.getItem(`daymark-migration-dismissed:${account.id}`) === 'true';
+    this.migrationAvailable.set(available && !dismissed);
+  }
+
+  private applyState(state: SavedState): void {
+    this.income.set(Number(state.income));
+    this.currency.set(state.currency);
+    this.categories.set(state.categories);
+    this.expenses.set(state.expenses);
+    this.hobbies.set(state.hobbies);
+    this.hobbyLogs.set(state.hobbyLogs);
+  }
+
+  private currentState(): SavedState {
+    return {
       income: this.income(),
       currency: this.currency(),
       categories: this.categories(),
@@ -315,6 +443,71 @@ export class App {
       hobbies: this.hobbies(),
       hobbyLogs: this.hobbyLogs(),
     };
-    window.localStorage.setItem('daymark-tracker', JSON.stringify(state));
   }
+
+  private saveState(): void {
+    if (!this.api.account()) return;
+    const state = this.currentState();
+    this.dataError.set('');
+    this.saveQueue = this.saveQueue
+      .then(async () => {
+        await this.api.saveTracker(state);
+      })
+      .catch((error: unknown) => {
+        this.dataError.set(this.errorMessage(error, 'Could not save your changes. Please try again.'));
+      });
+  }
+
+  private async importLegacyState(state: SavedState, fromBrowser: boolean): Promise<void> {
+    this.assertSavedState(state);
+    this.dataError.set('');
+    try {
+      const imported = await this.api.importTracker<SavedState>(state);
+      this.applyState(imported);
+      this.migrationAvailable.set(false);
+      if (fromBrowser) {
+        window.localStorage.removeItem('daymark-tracker');
+        this.legacyAvailable.set(false);
+      }
+      this.importFileSelected.set(false);
+    } catch (error) {
+      this.dataError.set(this.errorMessage(error, 'Could not import the saved data.'));
+    }
+  }
+
+  private readLegacyState(): SavedState | null {
+    const raw = window.localStorage.getItem('daymark-tracker');
+    if (!raw) return null;
+    try {
+      const state = JSON.parse(raw) as SavedState;
+      this.assertSavedState(state);
+      return state;
+    } catch {
+      return null;
+    }
+  }
+
+  private assertSavedState(value: SavedState): void {
+    if (
+      !value ||
+      typeof value.income !== 'number' ||
+      typeof value.currency !== 'string' ||
+      !Array.isArray(value.categories) ||
+      !Array.isArray(value.expenses) ||
+      !Array.isArray(value.hobbies) ||
+      !Array.isArray(value.hobbyLogs)
+    ) {
+      throw new Error('The file does not contain a valid Daymark data export.');
+    }
+  }
+
+  private errorMessage(error: unknown, fallback = 'Something went wrong. Please try again.'): string {
+    if (error instanceof HttpErrorResponse) {
+      if (error.status === 0) return 'Can’t reach the Daymark API. Start the backend and local services, then retry.';
+      const message = error.error?.message ?? error.error?.detail;
+      return typeof message === 'string' ? message : fallback;
+    }
+    return error instanceof Error ? error.message : fallback;
+  }
+
 }

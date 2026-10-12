@@ -1,6 +1,13 @@
 import { afterNextRender, Component, signal } from '@angular/core';
 
-type DashboardPage = 'overview' | 'budget' | 'hobbies';
+type DashboardPage = 'overview' | 'budget' | 'hobbies' | 'timetable';
+
+interface TimetableItem {
+  id: string;
+  day: number;
+  time: string;
+  title: string;
+}
 
 interface BudgetCategory {
   id: string;
@@ -27,6 +34,7 @@ interface HobbyLog {
   hobbyId: string;
   minutes: number;
   date: string;
+  completed?: boolean;
 }
 
 interface SavedState {
@@ -36,6 +44,9 @@ interface SavedState {
   expenses: Expense[];
   hobbies: Hobby[];
   hobbyLogs: HobbyLog[];
+  budgetHistory?: Record<string, { income: number; planned: number }>;
+  timetable?: TimetableItem[];
+  timetableCompletions?: string[];
 }
 
 const STARTER_CATEGORIES: BudgetCategory[] = [
@@ -61,6 +72,11 @@ export class App {
   protected readonly expenses = signal<Expense[]>([]);
   protected readonly hobbies = signal<Hobby[]>([]);
   protected readonly hobbyLogs = signal<HobbyLog[]>([]);
+  protected readonly budgetHistory = signal<Record<string, { income: number; planned: number }>>({});
+  protected readonly timetable = signal<TimetableItem[]>([]);
+  protected readonly timetableCompletions = signal<string[]>([]);
+  protected readonly now = signal(new Date());
+  protected readonly weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   protected readonly expenseFormOpen = signal(false);
   protected readonly categoryFormOpen = signal(false);
   protected readonly hobbyFormOpen = signal(false);
@@ -76,9 +92,14 @@ export class App {
     month: 'long',
     day: 'numeric',
   }).format(new Date());
+  protected readonly yesterdayKey = this.toDateKey(new Date(Date.now() - 86400000));
 
   constructor() {
-    afterNextRender(() => this.restoreState());
+    afterNextRender(() => {
+      this.restoreState();
+      this.now.set(new Date());
+      window.setInterval(() => this.now.set(new Date()), 30_000);
+    });
   }
 
   protected setPage(page: DashboardPage): void {
@@ -137,6 +158,93 @@ export class App {
     return this.hobbyLogs()
       .filter((log) => log.date === this.todayKey)
       .reduce((total, log) => total + log.minutes, 0);
+  }
+
+  protected previousDayLogs(): HobbyLog[] {
+    return this.hobbyLogs().filter((log) => log.date === this.yesterdayKey);
+  }
+
+  protected completedToday(hobbyId: string): boolean {
+    return this.hobbyLogs().some((log) => log.hobbyId === hobbyId && log.date === this.todayKey && log.completed);
+  }
+
+  protected toggleActivityComplete(hobbyId: string): void {
+    if (this.completedToday(hobbyId)) {
+      this.hobbyLogs.update((logs) => {
+        const completion = logs.find((log) => log.hobbyId === hobbyId && log.date === this.todayKey && log.completed);
+        return completion ? logs.filter((log) => log.id !== completion.id) : logs;
+      });
+    } else {
+      this.hobbyLogs.update((logs) => [{ id: this.newId(), hobbyId, minutes: 0, date: this.todayKey, completed: true }, ...logs]);
+    }
+    this.saveState();
+  }
+
+  protected deleteHobby(hobbyId: string): void {
+    this.hobbies.update((hobbies) => hobbies.filter((hobby) => hobby.id !== hobbyId));
+    this.hobbyLogs.update((logs) => logs.filter((log) => log.hobbyId !== hobbyId));
+    this.saveState();
+  }
+
+  protected rewardPoints(): number {
+    return this.hobbyLogs().filter((log) => log.date === this.todayKey && log.completed).length * 10;
+  }
+
+  protected monthName(monthKey: string): string {
+    return new Intl.DateTimeFormat('en', { month: 'long', year: 'numeric' }).format(new Date(`${monthKey}-01T12:00:00`));
+  }
+
+  protected monthSpent(monthKey: string): number {
+    return this.expenses().filter((expense) => expense.date.startsWith(monthKey)).reduce((sum, expense) => sum + expense.amount, 0);
+  }
+
+  protected historicalMonths(): string[] {
+    const keys = new Set([...Object.keys(this.budgetHistory()), ...this.expenses().map((expense) => expense.date.slice(0, 7))]);
+    return [...keys].filter((key) => key < this.currentMonthKey).sort().reverse().slice(0, 12);
+  }
+
+  protected todayTimetable(): TimetableItem[] {
+    const today = this.now().getDay();
+    return this.timetable().filter((item) => item.day === today).slice().sort((a, b) => a.time.localeCompare(b.time));
+  }
+
+  protected nextTimetableItem(): TimetableItem | undefined {
+    const currentTime = `${String(this.now().getHours()).padStart(2, '0')}:${String(this.now().getMinutes()).padStart(2, '0')}`;
+    return this.todayTimetable().find((item) => item.time >= currentTime && !this.isTimetableComplete(item));
+  }
+
+  protected isTimetableComplete(item: TimetableItem): boolean {
+    return this.timetableCompletions().includes(`${this.toDateKey(this.now())}:${item.id}`);
+  }
+
+  protected isTimetableItemComplete(item: TimetableItem): boolean {
+    return this.isTimetableComplete(item);
+  }
+
+  protected toggleTimetableComplete(item: TimetableItem): void {
+    const key = `${this.toDateKey(this.now())}:${item.id}`;
+    this.timetableCompletions.update((keys) => keys.includes(key) ? keys.filter((savedKey) => savedKey !== key) : [...keys, key]);
+    this.saveState();
+  }
+
+  protected addTimetableItem(event: Event, day: string, time: string, title: string, form: HTMLFormElement): void {
+    event.preventDefault();
+    const cleanedTitle = title.trim();
+    const dayIndex = Number(day);
+    if (!cleanedTitle || !time || !Number.isInteger(dayIndex) || dayIndex < 0 || dayIndex > 6) return;
+    this.timetable.update((items) => [...items, { id: this.newId(), day: dayIndex, time, title: cleanedTitle }]);
+    this.saveState();
+    form.reset();
+  }
+
+  protected removeTimetableItem(itemId: string): void {
+    this.timetable.update((items) => items.filter((item) => item.id !== itemId));
+    this.saveState();
+  }
+
+  protected formatTime(time: string): string {
+    const [hours, minutes] = time.split(':').map(Number);
+    return new Intl.DateTimeFormat('en', { hour: 'numeric', minute: '2-digit' }).format(new Date(2000, 0, 1, hours, minutes));
   }
 
   protected hobbyProgress(hobby: Hobby): number {
@@ -256,7 +364,7 @@ export class App {
     event.preventDefault();
     if (!hobbyId || !Number.isFinite(minutes) || minutes <= 0) return;
     this.hobbyLogs.update((logs) => [
-      { id: this.newId(), hobbyId, minutes, date: this.todayKey },
+      { id: this.newId(), hobbyId, minutes, date: this.todayKey, completed: false },
       ...logs,
     ]);
     this.saveState();
@@ -301,12 +409,16 @@ export class App {
       if (Array.isArray(state.expenses)) this.expenses.set(state.expenses);
       if (Array.isArray(state.hobbies)) this.hobbies.set(state.hobbies);
       if (Array.isArray(state.hobbyLogs)) this.hobbyLogs.set(state.hobbyLogs);
+      if (state.budgetHistory && typeof state.budgetHistory === 'object') this.budgetHistory.set(state.budgetHistory);
+      if (Array.isArray(state.timetable)) this.timetable.set(state.timetable);
+      if (Array.isArray(state.timetableCompletions)) this.timetableCompletions.set(state.timetableCompletions);
     } catch {
       window.localStorage.removeItem('daymark-tracker');
     }
   }
 
   private saveState(): void {
+    this.budgetHistory.update((history) => ({ ...history, [this.currentMonthKey]: { income: this.income(), planned: this.totalPlanned() } }));
     const state: SavedState = {
       income: this.income(),
       currency: this.currency(),
@@ -314,6 +426,9 @@ export class App {
       expenses: this.expenses(),
       hobbies: this.hobbies(),
       hobbyLogs: this.hobbyLogs(),
+      budgetHistory: this.budgetHistory(),
+      timetable: this.timetable(),
+      timetableCompletions: this.timetableCompletions(),
     };
     window.localStorage.setItem('daymark-tracker', JSON.stringify(state));
   }

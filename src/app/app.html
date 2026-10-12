@@ -14,7 +14,10 @@
         <span class="nav-glyph">02</span> Budget plan
       </button>
       <button type="button" [class.active]="activePage() === 'hobbies'" [attr.aria-current]="activePage() === 'hobbies' ? 'page' : null" (click)="setPage('hobbies')">
-        <span class="nav-glyph">03</span> Daily hobbies
+        <span class="nav-glyph">03</span> Daily activities
+      </button>
+      <button type="button" [class.active]="activePage() === 'timetable'" [attr.aria-current]="activePage() === 'timetable' ? 'page' : null" (click)="setPage('timetable')">
+        <span class="nav-glyph">04</span> Timetable
       </button>
     </nav>
 
@@ -42,6 +45,17 @@
             <p class="heading-copy">A clear view of where your money goes and what makes your day yours.</p>
           </div>
           <button class="button button-secondary" type="button" (click)="setPage('budget')">Plan this month <span aria-hidden="true">↗</span></button>
+        </section>
+
+        <section class="panel schedule-reminder">
+          <div class="panel-heading"><div><p class="eyebrow">YOUR REPEATING WEEKLY PLAN</p><h2>Today's timetable</h2></div><button class="text-action" type="button" (click)="setPage('timetable')">Edit timetable</button></div>
+          @if (nextTimetableItem(); as nextItem) {
+            <div class="next-reminder"><span class="reminder-clock">{{ formatTime(nextItem.time) }}</span><div><strong>Coming up next</strong><p>{{ nextItem.title }}</p></div></div>
+          } @else if (todayTimetable().length === 0) {
+            <p class="muted-copy">Add a weekly routine to get reminders for today's activities.</p>
+          } @else {
+            <p class="muted-copy">That's everything on today's timetable. You can check off completed tasks in the timetable.</p>
+          }
         </section>
 
         <section class="summary-grid" aria-label="Monthly summary">
@@ -113,8 +127,8 @@
 
         <section class="hobby-strip panel">
           <div class="hobby-strip-copy"><p class="eyebrow">LIFE OUTSIDE THE LEDGER</p><h2>Make room for <em>yourself.</em></h2><p>Small moments count. Keep track of the things you do just because you love them.</p></div>
-          <div class="hobby-strip-stat"><strong>{{ hobbies().length }}</strong><span>hobbies in your list</span></div>
-          <button class="button button-dark" type="button" (click)="setPage('hobbies')">Track a hobby <span aria-hidden="true">→</span></button>
+          <div class="hobby-strip-stat"><strong>{{ hobbies().length }}</strong><span>daily activities</span></div>
+          <button class="button button-dark" type="button" (click)="setPage('hobbies')">View activities <span aria-hidden="true">→</span></button>
         </section>
       }
 
@@ -122,6 +136,8 @@
         <section class="page-heading">
           <div><p class="eyebrow">A GOOD PLAN LEAVES ROOM TO LIVE</p><h1>Your budget, <em>your rules.</em></h1><p class="heading-copy">Set your monthly take-home income, then choose what feels right for each category.</p></div>
         </section>
+
+        <section class="panel budget-transactions"><div class="panel-heading"><div><p class="eyebrow">YOUR SPENDING HISTORY</p><h2>Previous months</h2></div></div><div class="history-list">@for (month of historicalMonths(); track month) {<div class="history-row"><strong>{{ monthName(month) }}</strong><span>Income {{ formatMoney(budgetHistory()[month]?.income ?? 0) }}</span><span>Planned {{ formatMoney(budgetHistory()[month]?.planned ?? 0) }}</span><strong>{{ formatMoney(monthSpent(month)) }} spent</strong></div>}</div></section>
 
         <section class="budget-overview-grid">
           <article class="income-panel">
@@ -181,16 +197,16 @@
         </section>
 
         <section class="hobby-actions">
-          <button class="button button-primary" type="button" (click)="toggleForm('hobby')"><span class="button-plus">+</span> Add a hobby</button>
+          <button class="button button-primary" type="button" (click)="toggleForm('hobby')"><span class="button-plus">+</span> Add an activity</button>
           @if (hobbies().length > 0) { <button class="button button-secondary" type="button" (click)="toggleForm('log')">◷ &nbsp; Log time</button> }
         </section>
 
         @if (hobbyFormOpen()) {
           <form #hobbyForm class="panel inline-form hobby-create-form" (submit)="addHobby($event, hobbyName.value, hobbyGoal.valueAsNumber, hobbyForm)">
-            <div class="form-heading"><p class="eyebrow">MAKE A LITTLE SPACE FOR IT</p><h2>Add a hobby</h2></div>
+            <div class="form-heading"><p class="eyebrow">MAKE A LITTLE SPACE FOR IT</p><h2>Add an activity</h2></div>
             <label>What do you enjoy?<input #hobbyName type="text" placeholder="e.g. Sketching, cycling, reading" maxlength="40" required /></label>
             <label>Daily goal in minutes<input #hobbyGoal type="number" placeholder="20" min="1" step="1" required /></label>
-            <button class="button button-primary" type="submit">Save hobby</button><button class="quiet-button" type="button" (click)="hobbyFormOpen.set(false)">Cancel</button>
+            <button class="button button-primary" type="submit">Save activity</button><button class="quiet-button" type="button" (click)="hobbyFormOpen.set(false)">Cancel</button>
           </form>
         }
 
@@ -204,23 +220,50 @@
         }
 
         @if (hobbies().length === 0) {
-          <section class="hobby-empty panel"><div class="hobby-empty-art" aria-hidden="true"><span>01</span><span>02</span><span>03</span></div><p class="eyebrow">YOUR TIME, YOURS TO SHAPE</p><h2>What do you love doing?</h2><p>Add a hobby and a gentle daily goal. You can log time as you go and see your consistency grow.</p><button class="button button-dark" type="button" (click)="toggleForm('hobby')">Add your first hobby <span aria-hidden="true">→</span></button></section>
+          <section class="hobby-empty panel"><div class="hobby-empty-art" aria-hidden="true"><span>01</span><span>02</span><span>03</span></div><p class="eyebrow">YOUR TIME, YOURS TO SHAPE</p><h2>What do you love doing?</h2><p>Add an activity and a gentle daily goal. You can log time as you go and see your consistency grow.</p><button class="button button-dark" type="button" (click)="toggleForm('hobby')">Add your first hobby <span aria-hidden="true">→</span></button></section>
         } @else {
           <section class="hobby-grid">
             @for (hobby of hobbies(); track hobby.id; let index = $index) {
               <article class="hobby-card panel hobby-card-{{ index % 3 }}">
-                <div class="hobby-card-top"><span class="hobby-index">HOBBY {{ (index + 1).toString().padStart(2, '0') }}</span><span class="hobby-ring" [style.background]="'conic-gradient(var(--ring-color) ' + hobbyProgress(hobby) + '%, #e8eee9 0)'"><span>{{ Math.round(hobbyProgress(hobby)) }}%</span></span></div>
+                <div class="hobby-card-top"><span class="hobby-index">ACTIVITY {{ (index + 1).toString().padStart(2, '0') }}</span><span class="hobby-ring" [style.background]="'conic-gradient(var(--ring-color) ' + hobbyProgress(hobby) + '%, #e8eee9 0)'"><span>{{ Math.round(hobbyProgress(hobby)) }}%</span></span></div>
                 <h2>{{ hobby.name }}</h2><p class="hobby-goal">{{ formatMinutes(hobby.dailyGoal) }} daily goal</p>
                 <div class="hobby-today"><span>Today</span><strong>{{ formatMinutes(dailyMinutes(hobby.id)) }}</strong></div>
                 <div class="progress-track"><span class="progress-fill" [style.width.%]="hobbyProgress(hobby)"></span></div>
-                <button class="hobby-log-button" type="button" (click)="toggleForm('log')">+ Log a session</button>
+                <div class="activity-card-actions"><button class="hobby-log-button" type="button" [class.activity-completed]="completedToday(hobby.id)" [attr.aria-pressed]="completedToday(hobby.id)" (click)="toggleActivityComplete(hobby.id)">{{ completedToday(hobby.id) ? 'Completed (undo) · +10 points' : 'Mark complete · +10 points' }}</button><button class="activity-delete-button" type="button" [attr.aria-label]="'Delete activity ' + hobby.name" (click)="deleteHobby(hobby.id)">Delete</button></div>
               </article>
             }
           </section>
           <section class="hobby-bottom-note"><span aria-hidden="true">✳</span><p>Showing up for a few minutes counts. Keep your goals kind and your curiosity alive.</p></section>
         }
       }
+
+      @if (activePage() === 'timetable') {
+        <section class="page-heading">
+          <div><p class="eyebrow">A ROUTINE THAT REPEATS EACH WEEK</p><h1>Your weekly <em>timetable.</em></h1><p class="heading-copy">Add the activities you want to follow. This same schedule repeats every week.</p></div>
+        </section>
+        @if (nextTimetableItem(); as nextItem) {
+          <section class="panel schedule-reminder timetable-next"><div class="next-reminder"><span class="reminder-clock">{{ formatTime(nextItem.time) }}</span><div><strong>Today's next reminder</strong><p>{{ nextItem.title }}</p></div></div></section>
+        }
+        <form #timetableForm class="panel inline-form timetable-form" (submit)="addTimetableItem($event, dayChoice.value, timeChoice.value, taskTitle.value, timetableForm)">
+          <div class="form-heading"><p class="eyebrow">BUILD YOUR WEEK</p><h2>Add a timetable activity</h2></div>
+          <label>Day<select #dayChoice required>@for (day of weekdays; track day; let index = $index) {<option [value]="index">{{ day }}</option>}</select></label>
+          <label>Time<input #timeChoice type="time" required /></label>
+          <label>Activity<input #taskTitle type="text" maxlength="60" placeholder="e.g. Morning walk" required /></label>
+          <button class="button button-primary" type="submit">Add to week</button>
+        </form>
+        <section class="timetable-week">
+          @for (day of weekdays; track day; let index = $index) {
+            <article class="panel timetable-day"><div class="panel-heading"><div><p class="eyebrow">DAY {{ (index + 1).toString().padStart(2, '0') }}</p><h2>{{ day }}</h2></div></div>
+              @if (timetable().filter(item => item.day === index).length === 0) {<p class="muted-copy">No activities planned.</p>}
+              @else {<div class="timetable-items">@for (item of timetable().filter(entry => entry.day === index).sort((a, b) => a.time.localeCompare(b.time)); track item.id) {
+                <div class="timetable-item" [class.task-done]="isTimetableItemComplete(item)"><span class="reminder-clock">{{ formatTime(item.time) }}</span><strong>{{ item.title }}</strong><button class="complete-toggle" type="button" [attr.aria-pressed]="isTimetableItemComplete(item)" (click)="toggleTimetableComplete(item)">{{ isTimetableItemComplete(item) ? 'Completed' : 'Mark complete' }}</button><button class="remove-button" type="button" [attr.aria-label]="'Remove ' + item.title" (click)="removeTimetableItem(item.id)">×</button></div>
+              }</div>}
+            </article>
+          }
+        </section>
+      }
     </div>
+        <section class="panel budget-transactions"><div class="panel-heading"><div><p class="eyebrow">YESTERDAY'S EFFORT</p><h2>{{ yesterdayKey }}</h2></div></div>@if (previousDayLogs().length === 0) {<p class="muted-copy">No activity was logged yesterday.</p>} @else {<div class="history-list">@for (log of previousDayLogs(); track log.id) {<div class="history-row"><strong>{{ hobbies().find(item => item.id === log.hobbyId)?.name ?? 'Activity' }}</strong><span>{{ formatMinutes(log.minutes) }}</span><span>{{ log.completed ? 'Completed · +10 points' : 'Effort logged' }}</span></div>}</div>}</section>
     <footer class="mobile-footer">Made for the life you’re building.</footer>
   </main>
 
@@ -243,6 +286,7 @@
   <nav class="mobile-nav" aria-label="Mobile navigation">
     <button type="button" [class.active]="activePage() === 'overview'" (click)="setPage('overview')"><span aria-hidden="true">⌂</span>Overview</button>
     <button type="button" [class.active]="activePage() === 'budget'" (click)="setPage('budget')"><span aria-hidden="true">＄</span>Budget</button>
-    <button type="button" [class.active]="activePage() === 'hobbies'" (click)="setPage('hobbies')"><span aria-hidden="true">◷</span>Hobbies</button>
+    <button type="button" [class.active]="activePage() === 'hobbies'" (click)="setPage('hobbies')"><span aria-hidden="true">◷</span>Activities</button>
+    <button type="button" [class.active]="activePage() === 'timetable'" (click)="setPage('timetable')"><span aria-hidden="true">▦</span>Timetable</button>
   </nav>
 </div>
